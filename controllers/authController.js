@@ -43,9 +43,9 @@ export const refresh = asyncHandler(async (req, res) => {
   }
 
   const user = await User.findById(payload.sub);
-  if (!user || !user.isActive) {
+  if (!user || !user.isActive || user.changedPasswordAfter(payload.iat)) {
     clearRefreshCookie(res);
-    throw new ApiError(401, 'Account not found or disabled', 'SESSION_EXPIRED');
+    throw new ApiError(401, 'Session expired. Please sign in again.', 'SESSION_EXPIRED');
   }
 
   setRefreshCookie(res, signRefreshToken(user)); // sliding session
@@ -60,3 +60,37 @@ export const logout = (_req, res) => {
 
 // GET /api/auth/me
 export const me = (req, res) => res.json({ user: req.user });
+
+// PUT /api/auth/me  -> users edit their own name and phone only
+export const updateMe = asyncHandler(async (req, res) => {
+  const { name, phone } = req.body;
+  const user = req.user;
+  if (name !== undefined) user.name = name;
+  if (phone !== undefined) user.phone = phone === '' || phone === null ? undefined : phone;
+  await user.validate(['name', 'phone']);
+  await user.save({ validateBeforeSave: false });
+  res.json({ user });
+});
+
+// PUT /api/auth/change-password
+export const changePassword = asyncHandler(async (req, res) => {
+  const { currentPassword, newPassword } = req.body;
+  if (typeof currentPassword !== 'string' || typeof newPassword !== 'string' || !currentPassword || !newPassword) {
+    throw new ApiError(400, 'Current password and new password are required');
+  }
+
+  const user = await User.findById(req.user._id).select('+password');
+  if (!(await user.comparePassword(currentPassword))) {
+    throw new ApiError(400, 'Current password is incorrect', 'WRONG_PASSWORD');
+  }
+  if (currentPassword === newPassword) throw new ApiError(400, 'New password must be different from the current one');
+
+  user.password = newPassword;
+  user.mustChangePassword = false;
+  await user.validate(['password']); // password policy, checked on the plain text
+  await user.save({ validateBeforeSave: false });
+
+  // Older sessions are now invalid, so issue fresh tokens for this one
+  setRefreshCookie(res, signRefreshToken(user));
+  res.json({ accessToken: signAccessToken(user), user, message: 'Password changed' });
+});

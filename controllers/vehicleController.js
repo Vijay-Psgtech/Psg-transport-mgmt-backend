@@ -38,6 +38,10 @@ async function assertDriverAvailable(driverId, vehicleId) {
   if (!driverId) return;
   const driver = await User.findOne({ _id: driverId, role: ROLES.DRIVER, isActive: true });
   if (!driver) throw new ApiError(400, 'Selected user is not an active driver');
+  const licenceExpiry = driver.driverProfile?.licenseExpiry;
+  if (licenceExpiry && licenceExpiry < new Date()) {
+    throw new ApiError(400, `${driver.name}'s driving licence has expired`);
+  }
   const clash = await Vehicle.findOne({ assignedDriver: driverId, ...(vehicleId && { _id: { $ne: vehicleId } }) });
   if (clash) throw new ApiError(409, `${driver.name} is already assigned to ${clash.regNo}`);
 }
