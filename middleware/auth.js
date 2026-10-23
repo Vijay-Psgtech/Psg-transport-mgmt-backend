@@ -18,6 +18,12 @@ export const protect = asyncHandler(async (req, _res, next) => {
 
   const user = await User.findById(payload.sub);
   if (!user || !user.isActive) throw new ApiError(401, 'Account not found or disabled', 'TOKEN_INVALID');
+  if (user.changedPasswordAfter(payload.iat)) throw new ApiError(401, 'Password was changed. Sign in again.', 'TOKEN_INVALID');
+
+  // Accounts with a temporary password may only use /api/auth/* until they set their own
+  if (user.mustChangePassword && req.baseUrl !== '/api/auth') {
+    throw new ApiError(403, 'Change your temporary password to continue', 'PASSWORD_CHANGE_REQUIRED');
+  }
 
   req.user = user;
   next();
