@@ -2,20 +2,34 @@ import 'dotenv/config';
 import mongoose from 'mongoose';
 import User from '../models/User.js';
 
+const days = (n) => new Date(Date.now() + n * 24 * 60 * 60 * 1000);
+
 const seeds = [
   { name: 'System Admin', email: 'admin@institute.edu', password: 'Admin@12345', role: 'admin' },
   { name: 'Transport Officer', email: 'officer@institute.edu', password: 'Officer@12345', role: 'transport_officer' },
-  { name: 'Ravi Kumar', email: 'driver1@institute.edu', password: 'Driver@12345', role: 'driver', phone: '9876543210' },
-  { name: 'Murugan S', email: 'driver2@institute.edu', password: 'Driver@12345', role: 'driver', phone: '9876543211' },
+  {
+    name: 'Ravi Kumar', email: 'driver1@institute.edu', password: 'Driver@12345', role: 'driver', phone: '9876543210',
+    driverProfile: { licenseNumber: 'TN3820150012345', licenseClass: 'HPMV', licenseExpiry: days(900), badgeNumber: 'PSV-1042', bloodGroup: 'B+', experienceYears: 8 },
+  },
+  {
+    // Licence due in 20 days, handy for seeing the "due soon" badge
+    name: 'Murugan S', email: 'driver2@institute.edu', password: 'Driver@12345', role: 'driver', phone: '9876543211',
+    driverProfile: { licenseNumber: 'TN3820120067890', licenseClass: 'HMV', licenseExpiry: days(20), bloodGroup: 'O+', experienceYears: 12 },
+  },
 ];
 
 await mongoose.connect(process.env.MONGO_URI);
 for (const s of seeds) {
-  if (await User.findOne({ email: s.email })) {
-    console.log(`Exists:  ${s.email}`);
-  } else {
+  const existing = await User.findOne({ email: s.email });
+  if (!existing) {
     await User.create(s);
     console.log(`Created: ${s.email} (${s.role})`);
+  } else if (s.driverProfile && !existing.driverProfile?.licenseNumber) {
+    // Drivers created in Phase 1 had no licence details
+    await User.updateOne({ _id: existing._id }, { $set: { driverProfile: s.driverProfile } });
+    console.log(`Updated: ${s.email} (added licence details)`);
+  } else {
+    console.log(`Exists:  ${s.email}`);
   }
 }
 await mongoose.disconnect();
