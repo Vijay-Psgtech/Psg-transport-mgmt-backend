@@ -8,6 +8,7 @@ import connectDB from './config/db.js';
 import authRoutes from './routes/authRoutes.js';
 import userRoutes from './routes/userRoutes.js';
 import vehicleRoutes from './routes/vehicleRoutes.js';
+import reportRoutes from './routes/reportRoutes.js';
 import { notFound, errorHandler } from './middleware/errorHandler.js';
 
 for (const key of ['JWT_ACCESS_SECRET', 'JWT_REFRESH_SECRET']) {
@@ -31,6 +32,7 @@ app.get('/api/health', (_req, res) => res.json({ status: 'ok' }));
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/vehicles', vehicleRoutes);
+app.use('/api/reports', reportRoutes);
 
 app.use(notFound);
 app.use(errorHandler);
