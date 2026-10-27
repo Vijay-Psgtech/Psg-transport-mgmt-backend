@@ -43,6 +43,13 @@ All authenticated routes use the HTTP-only `psg_transport_session` cookie (confi
 | `POST` | `/api/vehicles` | Admin, manager | Add a vehicle |
 | `PATCH` | `/api/vehicles/:id` | Admin, manager | Update provided vehicle fields |
 | `DELETE` | `/api/vehicles/:id` | Admin, manager | Remove a vehicle |
+| `GET` | `/api/service-history` | Admin, transport officer | Search and page through vehicle service records |
+| `GET` | `/api/service-history/stats` | Admin, transport officer | Fleet-wide service counts and spend summaries |
+| `POST` | `/api/service-history` | Admin, transport officer | Record a service, repair, inspection, or scheduled maintenance |
+| `PUT` | `/api/service-history/:id` | Admin, transport officer | Update a service record |
+| `DELETE` | `/api/service-history/:id` | Admin | Delete a service record |
+
+Service history records include a vehicle, service category and status, service date and odometer, work description, provider, cost, optional next-service date/odometer, and notes. List filters include search, vehicle, service type, status, and service-date range. Service records are kept in their own collection because a vehicle's maintenance history can grow over time.
 
 Vehicle JSON fields: `type` (`bus` or `car`), `registrationNumber`, `make`, `model`, `year`, `capacity`, `fuelType` (`diesel`, `petrol`, `electric`, `hybrid`, `cng`, `other`), `status` (`active`, `maintenance`, `inactive`), and optional `assignedDriver` and `notes`.
 
