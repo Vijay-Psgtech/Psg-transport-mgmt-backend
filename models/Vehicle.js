@@ -11,6 +11,10 @@ const documentSchema = new Schema({
   number: { type: String, trim: true },
   issueDate: Date,
   expiryDate: { type: Date, required: [true, 'Document expiry date is required'] },
+  proofImage: {
+    filename: { type: String, match: /^[\da-f-]{36}$/i },
+    mimeType: { type: String, enum: ['image/jpeg', 'image/png', 'image/webp'] },
+  },
 });
 
 const vehicleSchema = new Schema(
