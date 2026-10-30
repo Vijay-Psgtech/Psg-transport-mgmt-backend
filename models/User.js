@@ -17,10 +17,11 @@ const userSchema = new mongoose.Schema(
     name: { type: String, required: [true, 'Name is required'], trim: true, maxlength: 100 },
     email: {
       type: String,
-      required: [true, 'Email is required'],
       unique: true,
+      sparse: true,
       lowercase: true,
       trim: true,
+      set: (v) => (typeof v === 'string' && !v.trim() ? undefined : v),
       match: [/^\S+@\S+\.\S+$/, 'Enter a valid email address'],
     },
     password: {
@@ -34,7 +35,15 @@ const userSchema = new mongoose.Schema(
       select: false,
     },
     role: { type: String, enum: { values: ROLE_LIST, message: 'Invalid role' }, default: ROLES.STUDENT, index: true },
-    phone: { type: String, trim: true, match: phoneRule },
+    phone: {
+      type: String,
+      required: [true, 'Phone number is required'],
+      unique: true,
+      sparse: true,
+      trim: true,
+      set: (v) => (typeof v === 'string' ? v.replace(/[\s-]/g, '') : v),
+      match: phoneRule,
+    },
     idNumber: { type: String, trim: true, uppercase: true, unique: true, sparse: true }, // staff / student / employee ID
     isActive: { type: Boolean, default: true },
     mustChangePassword: { type: Boolean, default: false },

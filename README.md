@@ -29,6 +29,21 @@ Express 5 and MongoDB/Mongoose API for login, role-based access, user provisioni
 
 Administrators create manager and operator accounts through `POST /api/auth/users`; public sign-up is intentionally disabled.
 
+## Account identity and sign-in
+
+Every account must have a unique phone number. Email is optional and, when provided, must be unique. Users can sign in with either their email address or phone number and password; drivers can use their phone number.
+
+Before deploying this change to an existing database, backfill a valid, unique phone number for every account. Normalize existing phone values by removing spaces and hyphens and resolve any resulting duplicates. Convert blank email values to missing fields, then replace the existing non-sparse email index so multiple accounts may omit email:
+
+```javascript
+db.users.updateMany({ email: { $in: ['', null] } }, { $unset: { email: '' } })
+db.users.dropIndex('email_1')
+db.users.createIndex({ email: 1 }, { unique: true, sparse: true })
+db.users.createIndex({ phone: 1 }, { unique: true, sparse: true })
+```
+
+Run the index changes only after checking for duplicate phone numbers and duplicate non-empty email addresses. Do not start the application until the existing email index is replaced.
+
 ## API
 
 All authenticated routes use the HTTP-only `psg_transport_session` cookie (configurable with `AUTH_COOKIE_NAME`). The browser client sends credentials; configure `CLIENT_URL` to the exact allowed frontend origin.

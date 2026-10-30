@@ -12,15 +12,26 @@ import {
 
 // POST /api/auth/login
 export const login = asyncHandler(async (req, res) => {
-  const { email, password } = req.body;
+  const { email, phone, password } = req.body;
+  const hasEmail = email !== undefined;
+  const hasPhone = phone !== undefined;
   // typeof checks also block NoSQL operator injection such as { "$ne": "" }
-  if (typeof email !== 'string' || typeof password !== 'string' || !email.trim() || !password) {
-    throw new ApiError(400, 'Email and password are required');
+  if (
+    hasEmail === hasPhone ||
+    (hasEmail && (typeof email !== 'string' || !email.trim())) ||
+    (hasPhone && (typeof phone !== 'string' || !phone.trim())) ||
+    typeof password !== 'string' ||
+    !password
+  ) {
+    throw new ApiError(400, 'Enter an email address or phone number and your password');
   }
 
-  const user = await User.findOne({ email: email.toLowerCase().trim() }).select('+password');
+  const query = hasPhone
+    ? { phone: phone.replace(/[\s-]/g, '') }
+    : { email: email.toLowerCase().trim() };
+  const user = await User.findOne(query).select('+password');
   const valid = user && (await user.comparePassword(password));
-  if (!valid) throw new ApiError(401, 'Invalid email or password', 'INVALID_CREDENTIALS');
+  if (!valid) throw new ApiError(401, 'Invalid sign-in details', 'INVALID_CREDENTIALS');
   if (!user.isActive) throw new ApiError(403, 'Your account is deactivated. Contact the administrator.', 'ACCOUNT_DISABLED');
 
   await User.updateOne({ _id: user._id }, { lastLoginAt: new Date() });
