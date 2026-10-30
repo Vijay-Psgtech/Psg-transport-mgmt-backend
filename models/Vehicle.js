@@ -49,6 +49,25 @@ const vehicleSchema = new Schema(
     },
     chassisNo: { type: String, trim: true, uppercase: true, unique: true, sparse: true },
     engineNo: { type: String, trim: true, uppercase: true },
+    fastagAvailable: { type: Boolean, default: false },
+    fastagIssuingBank: {
+      type: String,
+      trim: true,
+      maxlength: 100,
+      required: [function () { return this.fastagAvailable; }, 'FASTag issuing bank is required when FASTag is available'],
+    },
+    fastagId: {
+      type: String,
+      trim: true,
+      maxlength: 100,
+      required: [function () { return this.fastagAvailable; }, 'FASTag ID is required when FASTag is available'],
+    },
+    fastagStatus: {
+      type: String,
+      trim: true,
+      maxlength: 50,
+      required: [function () { return this.fastagAvailable; }, 'FASTag status is required when FASTag is available'],
+    },
     odometer: { type: Number, min: [0, 'Odometer cannot be negative'], default: 0 }, // km
     status: {
       type: String,

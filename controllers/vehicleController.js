@@ -9,7 +9,8 @@ import { removeVehicleProofFiles, vehicleProofPath } from '../utils/vehicleProof
 
 const FIELDS = [
   'vehicleType', 'regNo', 'make', 'model', 'manufactureYear', 'color', 'fuelType',
-  'seatingCapacity', 'chassisNo', 'engineNo', 'odometer', 'status', 'assignedDriver',
+  'seatingCapacity', 'chassisNo', 'engineNo', 'fastagAvailable', 'fastagIssuingBank',
+  'fastagId', 'fastagStatus', 'odometer', 'status', 'assignedDriver',
   'gpsDeviceId', 'notes',
 ];
 const SORTABLE = ['createdAt', 'regNo', 'seatingCapacity', 'manufactureYear'];
