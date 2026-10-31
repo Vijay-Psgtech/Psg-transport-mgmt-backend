@@ -94,7 +94,8 @@ export const getVehicles = asyncHandler(async (req, res) => {
   if (typeof search === 'string' && search.trim()) {
     const text = new RegExp(escapeRegex(search.trim()), 'i');
     const reg = new RegExp(escapeRegex(search.replace(/[\s-]/g, '')), 'i');
-    filter.$or = [{ regNo: reg }, { make: text }, { model: text }];
+    const type = new RegExp(escapeRegex(search.trim().replace(/[\s-]+/g, '_')), 'i');
+    filter.$or = [{ regNo: reg }, { make: text }, { model: text }, { vehicleType: type }];
   }
 
   const sortField = SORTABLE.includes(sortBy) ? sortBy : 'createdAt';
