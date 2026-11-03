@@ -2,9 +2,7 @@ export const ROLES = Object.freeze({
   ADMIN: 'admin',
   TRANSPORT_OFFICER: 'transport_officer',
   DRIVER: 'driver',
-  STAFF: 'staff',
-  STUDENT: 'student',
-  PARENT: 'parent',
+  TRANSPORT_USER: 'transport_user',
 });
 
 export const ROLE_LIST = Object.values(ROLES);
