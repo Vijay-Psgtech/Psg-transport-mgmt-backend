@@ -1,6 +1,5 @@
 import Vehicle from '../models/Vehicle.js';
-import User from '../models/User.js';
-import { ROLES } from '../constants/roles.js';
+import VehicleAssignment from '../models/VehicleAssignment.js';
 import { VEHICLE_TYPES, VEHICLE_STATUSES } from '../constants/vehicle.js';
 import ApiError from '../utils/ApiError.js';
 import asyncHandler from '../utils/asyncHandler.js';
@@ -10,8 +9,7 @@ import { removeVehicleProofFiles, vehicleProofPath } from '../utils/vehicleProof
 const FIELDS = [
   'vehicleType', 'regNo', 'make', 'model', 'manufactureYear', 'color', 'fuelType',
   'seatingCapacity', 'chassisNo', 'engineNo', 'fastagAvailable', 'fastagIssuingBank',
-  'fastagId', 'fastagStatus', 'odometer', 'status', 'assignedDriver',
-  'gpsDeviceId', 'notes',
+  'fastagId', 'fastagStatus', 'odometer', 'status', 'gpsDeviceId', 'notes',
 ];
 const SORTABLE = ['createdAt', 'regNo', 'seatingCapacity', 'manufactureYear'];
 const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -69,19 +67,6 @@ async function removeReplacedProofs(previousDocuments, nextDocuments) {
   await removeVehicleProofFiles(savedProofs(previousDocuments).filter((proof) => !retained.has(proof.filename)));
 }
 
-// Assigned user must be an active driver who is not already on another vehicle
-async function assertDriverAvailable(driverId, vehicleId) {
-  if (!driverId) return;
-  const driver = await User.findOne({ _id: driverId, role: ROLES.DRIVER, isActive: true });
-  if (!driver) throw new ApiError(400, 'Selected user is not an active driver');
-  const licenceExpiry = driver.driverProfile?.licenseExpiry;
-  if (licenceExpiry && licenceExpiry < new Date()) {
-    throw new ApiError(400, `${driver.name}'s driving licence has expired`);
-  }
-  const clash = await Vehicle.findOne({ assignedDriver: driverId, ...(vehicleId && { _id: { $ne: vehicleId } }) });
-  if (clash) throw new ApiError(409, `${driver.name} is already assigned to ${clash.regNo}`);
-}
-
 // GET /api/vehicles?page=&limit=&search=&vehicleType=&status=&sortBy=&order=
 export const getVehicles = asyncHandler(async (req, res) => {
   const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
@@ -103,7 +88,6 @@ export const getVehicles = asyncHandler(async (req, res) => {
 
   const [data, total] = await Promise.all([
     Vehicle.find(filter)
-      .populate('assignedDriver', 'name phone')
       .sort(sort)
       .skip((page - 1) * limit)
       .limit(limit),
@@ -128,7 +112,7 @@ export const getVehicleStats = asyncHandler(async (_req, res) => {
 
 // GET /api/vehicles/:id
 export const getVehicle = asyncHandler(async (req, res) => {
-  const vehicle = await Vehicle.findById(req.params.id).populate('assignedDriver', 'name phone');
+  const vehicle = await Vehicle.findById(req.params.id);
   if (!vehicle) throw new ApiError(404, 'Vehicle not found');
   res.json({ data: vehicle });
 });
@@ -155,7 +139,6 @@ export const createVehicle = asyncHandler(async (req, res) => {
   let vehicle;
   try {
     const fields = extract(req.body, null, req.files || []);
-    await assertDriverAvailable(fields.assignedDriver);
     vehicle = await Vehicle.create({ ...fields, createdBy: req.user._id });
   } catch (error) {
     try {
@@ -165,7 +148,6 @@ export const createVehicle = asyncHandler(async (req, res) => {
     }
     throw error;
   }
-  await vehicle.populate('assignedDriver', 'name phone');
   res.status(201).json({ data: vehicle });
 });
 
@@ -177,11 +159,18 @@ export const updateVehicle = asyncHandler(async (req, res) => {
   try {
     vehicle = await Vehicle.findById(req.params.id);
     if (!vehicle) throw new ApiError(404, 'Vehicle not found');
+    if (req.body.status && req.body.status !== 'active') {
+      const upcoming = await VehicleAssignment.findOne({
+        vehicle: vehicle._id,
+        status: 'assigned',
+        endAt: { $gt: new Date() },
+      }).select('_id');
+      if (upcoming) throw new ApiError(409, 'Cancel or complete upcoming vehicle assignments before changing its status');
+    }
     previousDocuments = vehicle.documents.map((document) => ({
       proofImage: document.proofImage?.toObject?.() || document.proofImage,
     }));
     fields = extract(req.body, vehicle, req.files || []);
-    await assertDriverAvailable(fields.assignedDriver, vehicle._id);
     vehicle.set(fields);
     await vehicle.save(); // runs schema validators
   } catch (error) {
@@ -193,7 +182,6 @@ export const updateVehicle = asyncHandler(async (req, res) => {
     throw error;
   }
   await removeReplacedProofs(previousDocuments, vehicle.documents);
-  await vehicle.populate('assignedDriver', 'name phone');
   res.json({ data: vehicle });
 });
 
@@ -201,6 +189,12 @@ export const updateVehicle = asyncHandler(async (req, res) => {
 export const deleteVehicle = asyncHandler(async (req, res) => {
   const vehicle = await Vehicle.findById(req.params.id);
   if (!vehicle) throw new ApiError(404, 'Vehicle not found');
+  const upcoming = await VehicleAssignment.findOne({
+    vehicle: vehicle._id,
+    status: 'assigned',
+    endAt: { $gt: new Date() },
+  }).select('_id');
+  if (upcoming) throw new ApiError(409, 'Cancel or complete upcoming vehicle assignments before deleting it');
   await vehicle.deleteOne();
   await removeVehicleProofFiles(savedProofs(vehicle.documents));
   res.json({ message: 'Vehicle deleted' });

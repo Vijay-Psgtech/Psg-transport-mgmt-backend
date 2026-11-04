@@ -75,7 +75,6 @@ const vehicleSchema = new Schema(
       default: 'active',
       index: true,
     },
-    assignedDriver: { type: Schema.Types.ObjectId, ref: 'User', default: undefined },
     gpsDeviceId: { type: String, trim: true },
     documents: [documentSchema],
     notes: { type: String, trim: true, maxlength: 500 },

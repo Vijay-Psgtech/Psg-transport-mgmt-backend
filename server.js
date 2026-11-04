@@ -8,6 +8,7 @@ import connectDB from './config/db.js';
 import authRoutes from './routes/authRoutes.js';
 import userRoutes from './routes/userRoutes.js';
 import vehicleRoutes from './routes/vehicleRoutes.js';
+import vehicleAssignmentRoutes from './routes/vehicleAssignmentRoutes.js';
 import serviceHistoryRoutes from './routes/serviceHistoryRoutes.js';
 import reportRoutes from './routes/reportRoutes.js';
 import { notFound, errorHandler } from './middleware/errorHandler.js';
@@ -33,6 +34,7 @@ app.get('/api/health', (_req, res) => res.json({ status: 'ok' }));
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/vehicles', vehicleRoutes);
+app.use('/api/vehicle-assignments', vehicleAssignmentRoutes);
 app.use('/api/service-history', serviceHistoryRoutes);
 app.use('/api/reports', reportRoutes);
 
