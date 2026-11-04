@@ -1,5 +1,5 @@
 import User from '../models/User.js';
-import Vehicle from '../models/Vehicle.js';
+import VehicleAssignment from '../models/VehicleAssignment.js';
 import { ROLES, ROLE_LIST } from '../constants/roles.js';
 import ApiError from '../utils/ApiError.js';
 import asyncHandler from '../utils/asyncHandler.js';
@@ -26,23 +26,33 @@ function extractProfile(body) {
   return Object.fromEntries(PROFILE_FIELDS.map((k) => [k, clean(src[k])]));
 }
 
-// A driver who is deactivated, deleted or changes role must not stay assigned to a vehicle
-async function releaseDriver(userId) {
-  const res = await Vehicle.updateMany({ assignedDriver: userId }, { $unset: { assignedDriver: 1 } });
-  return res.modifiedCount;
+async function assertNoUpcomingDriverAssignments(userId) {
+  const assignment = await VehicleAssignment.findOne({
+    driver: userId,
+    status: 'assigned',
+    endAt: { $gt: new Date() },
+  }).select('_id');
+  if (assignment) {
+    throw new ApiError(409, "Cancel or complete the driver's upcoming vehicle assignments before changing this account");
+  }
 }
 
-// Adds the vehicle each driver is currently assigned to
-async function withVehicles(users) {
-  const ids = users.filter((u) => u.role === ROLES.DRIVER).map((u) => u._id);
-  const vehicles = ids.length
-    ? await Vehicle.find({ assignedDriver: { $in: ids } }).select('regNo vehicleType assignedDriver')
-    : [];
-  const byDriver = new Map(
-    vehicles.map((v) => [String(v.assignedDriver), { _id: v._id, regNo: v.regNo, vehicleType: v.vehicleType }])
-  );
-  return users.map((u) => ({ ...u.toJSON(), assignedVehicle: byDriver.get(String(u._id)) || null }));
+async function assertDriverLicenceCoversUpcomingAssignments(userId, licenseExpiry) {
+  const latest = await VehicleAssignment.findOne({
+    driver: userId,
+    status: 'assigned',
+    endAt: { $gt: new Date() },
+  }).sort({ endAt: -1 }).select('endAt');
+  if (!latest) return;
+
+  const expiryEnd = licenseExpiry ? new Date(licenseExpiry) : null;
+  expiryEnd?.setUTCHours(23, 59, 59, 999);
+  if (!expiryEnd || expiryEnd < latest.endAt) {
+    throw new ApiError(409, "The driver's updated licence expiry does not cover upcoming vehicle assignments");
+  }
 }
+
+const serializeUsers = (users) => users.map((user) => user.toJSON());
 
 async function findManageable(req) {
   const user = await User.findById(req.params.id);
@@ -84,7 +94,7 @@ export const listUsers = asyncHandler(async (req, res) => {
   ]);
 
   res.json({
-    data: await withVehicles(users),
+    data: serializeUsers(users),
     pagination: { page, limit, total, pages: Math.max(Math.ceil(total / limit), 1) },
   });
 });
@@ -107,7 +117,7 @@ export const getUserStats = asyncHandler(async (req, res) => {
 // GET /api/users/:id
 export const getUser = asyncHandler(async (req, res) => {
   const user = await findManageable(req);
-  res.json({ data: (await withVehicles([user]))[0] });
+  res.json({ data: serializeUsers([user])[0] });
 });
 
 // POST /api/users
@@ -127,7 +137,7 @@ export const createUser = asyncHandler(async (req, res) => {
     mustChangePassword: true, // the admin knows the first password, so the user must replace it
     ...(role === ROLES.DRIVER && { driverProfile: extractProfile(body) }),
   });
-  res.status(201).json({ data: (await withVehicles([user]))[0], message: 'User created' });
+  res.status(201).json({ data: serializeUsers([user])[0], message: 'User created' });
 });
 
 // PUT /api/users/:id
@@ -135,13 +145,14 @@ export const updateUser = asyncHandler(async (req, res) => {
   const user = await findManageable(req);
   const body = req.body;
   const isSelf = user._id.equals(req.user._id);
-  const wasDriver = user.role === ROLES.DRIVER;
-
   let newRole = user.role;
   if (!blank(body.role) && body.role !== user.role) {
     if (req.user.role !== ROLES.ADMIN) throw new ApiError(403, 'Only an administrator can change roles', 'FORBIDDEN');
     if (isSelf) throw new ApiError(400, 'You cannot change your own role');
     newRole = body.role;
+  }
+  if (user.role === ROLES.DRIVER && newRole !== ROLES.DRIVER) {
+    await assertNoUpcomingDriverAssignments(user._id);
   }
 
   for (const key of ['name', 'email', 'phone', 'idNumber']) {
@@ -151,16 +162,18 @@ export const updateUser = asyncHandler(async (req, res) => {
 
   // Set each profile field explicitly so cleared fields are really removed
   const profile = extractProfile(body);
+  if (newRole === ROLES.DRIVER) {
+    await assertDriverLicenceCoversUpcomingAssignments(user._id, profile.licenseExpiry);
+  }
   for (const key of PROFILE_FIELDS) {
     user.set(`driverProfile.${key}`, newRole === ROLES.DRIVER ? profile[key] : undefined);
   }
 
   await user.save(); // runs schema validators (licence fields required for drivers)
 
-  const released = wasDriver && newRole !== ROLES.DRIVER ? await releaseDriver(user._id) : 0;
   res.json({
-    data: (await withVehicles([user]))[0],
-    message: released ? 'User updated. The driver was removed from their vehicle.' : 'User updated',
+    data: serializeUsers([user])[0],
+    message: 'User updated',
   });
 });
 
@@ -171,15 +184,15 @@ export const setUserStatus = asyncHandler(async (req, res) => {
 
   const user = await findManageable(req);
   if (user._id.equals(req.user._id)) throw new ApiError(400, 'You cannot deactivate your own account');
+  if (!isActive && user.role === ROLES.DRIVER) await assertNoUpcomingDriverAssignments(user._id);
 
   // updateOne avoids re-validating older records that may lack newer required fields
   await User.updateOne({ _id: user._id }, { isActive });
   user.isActive = isActive;
 
-  const released = !isActive && user.role === ROLES.DRIVER ? await releaseDriver(user._id) : 0;
   res.json({
-    data: (await withVehicles([user]))[0],
-    message: released ? 'Account deactivated. The driver was removed from their vehicle.' : isActive ? 'Account activated' : 'Account deactivated',
+    data: serializeUsers([user])[0],
+    message: isActive ? 'Account activated' : 'Account deactivated',
   });
 });
 
@@ -202,7 +215,7 @@ export const deleteUser = asyncHandler(async (req, res) => {
   if (!user) throw new ApiError(404, 'User not found');
   if (user._id.equals(req.user._id)) throw new ApiError(400, 'You cannot delete your own account');
 
-  if (user.role === ROLES.DRIVER) await releaseDriver(user._id);
+  if (user.role === ROLES.DRIVER) await assertNoUpcomingDriverAssignments(user._id);
   await user.deleteOne();
   res.json({ message: 'User deleted' });
 });
