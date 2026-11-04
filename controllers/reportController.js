@@ -1,4 +1,5 @@
 import Vehicle from '../models/Vehicle.js';
+import VehicleAssignment from '../models/VehicleAssignment.js';
 import User from '../models/User.js';
 import { ROLES } from '../constants/roles.js';
 import asyncHandler from '../utils/asyncHandler.js';
@@ -38,7 +39,7 @@ export const getDashboardReport = asyncHandler(async (req, res) => {
 
   const experience = '$driverProfile.experienceYears';
 
-  const [[v], [d], assignedVehicles, vehiclesDocsDue, vehicleAlerts, driverAlerts, roleRows] = await Promise.all([
+  const [[v], [d], assignedVehicleIds, assignedDriverIds, vehiclesDocsDue, vehicleAlerts, driverAlerts, roleRows] = await Promise.all([
     Vehicle.aggregate([
       {
         $facet: {
@@ -96,7 +97,8 @@ export const getDashboardReport = asyncHandler(async (req, res) => {
         },
       },
     ]),
-    Vehicle.countDocuments({ assignedDriver: { $exists: true, $ne: null } }),
+    VehicleAssignment.distinct('vehicle', { status: 'assigned', endAt: { $gt: now } }),
+    VehicleAssignment.distinct('driver', { status: 'assigned', endAt: { $gt: now } }),
     Vehicle.countDocuments({ documents: { $elemMatch: { expiryDate: { $lte: in30 } } } }),
     // Soonest vehicle documents that are expired or expire within 30 days
     Vehicle.aggregate([
@@ -140,7 +142,10 @@ export const getDashboardReport = asyncHandler(async (req, res) => {
   const activeDrivers = driverStatus.true || 0;
   const licence = { expired: 0, due30: 0, due90: 0, valid: 0, unknown: 0, ...toMap(d.licence) };
   const expMap = toMap(d.experience);
-  const assignedDrivers = Math.min(assignedVehicles, activeDrivers);
+  const assignedVehicles = Math.min(assignedVehicleIds.length, totalVehicles);
+  const assignedDrivers = assignedDriverIds.length
+    ? Math.min(await User.countDocuments({ _id: { $in: assignedDriverIds }, role: ROLES.DRIVER, isActive: true }), activeDrivers)
+    : 0;
 
   // ---- needs attention: vehicle documents and driver licences, soonest first ----
   const attention = [
