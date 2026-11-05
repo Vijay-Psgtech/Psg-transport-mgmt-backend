@@ -7,7 +7,7 @@ const serviceRecordSchema = new Schema(
     vehicle: { type: Schema.Types.ObjectId, ref: 'Vehicle', required: [true, 'Vehicle is required'] },
     serviceType: {
       type: String,
-      enum: ['routine', 'oil_change', 'repair', 'inspection', 'tyres', 'battery', 'other'],
+      enum: ['preventive', 'oil_change', 'repair', 'adblue', 'tyre_retread', 'fc', 'wheel_alignment', 'battery', 'air_greese', 'water_wash', 'Body_work'],
       required: [true, 'Service type is required'],
     },
     status: {
