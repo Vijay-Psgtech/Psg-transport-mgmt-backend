@@ -138,6 +138,23 @@ export const listVehicleAssignments = asyncHandler(async (req, res) => {
   res.json({ data, pagination: { page, limit, total, pages: Math.max(Math.ceil(total / limit), 1) } });
 });
 
+// GET /api/vehicle-assignments/my-trips?page=&limit=
+export const listDriverTrips = asyncHandler(async (req, res) => {
+  const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
+  const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 10, 1), 50);
+  const filter = { driver: req.user._id, status: { $in: ['assigned', 'completed'] } };
+
+  const [data, total] = await Promise.all([
+    VehicleAssignment.find(filter)
+      .populate(assignmentPopulate)
+      .sort({ status: 1, startAt: -1 })
+      .skip((page - 1) * limit)
+      .limit(limit),
+    VehicleAssignment.countDocuments(filter),
+  ]);
+  res.json({ data, pagination: { page, limit, total, pages: Math.max(Math.ceil(total / limit), 1) } });
+});
+
 // POST /api/vehicle-assignments
 export const createVehicleAssignment = asyncHandler(async (req, res) => {
   if (req.user.role === ROLES.TRANSPORT_USER) {
@@ -178,6 +195,46 @@ export const createVehicleAssignment = asyncHandler(async (req, res) => {
   });
   await assignment.populate(assignmentPopulate);
   res.status(201).json({ data: assignment });
+});
+
+// PATCH /api/vehicle-assignments/:id/trip-sheet
+export const submitTripSheet = asyncHandler(async (req, res) => {
+  const { startOdometer, endOdometer, fuelConsumed, notes } = req.body;
+  const isOdometer = (value) => Number.isInteger(value) && value >= 0 && value <= 99999999;
+  if (!isOdometer(startOdometer) || !isOdometer(endOdometer)) {
+    throw new ApiError(400, 'Enter valid start and end odometer readings in kilometres');
+  }
+  if (endOdometer < startOdometer) {
+    throw new ApiError(400, 'End odometer must be greater than or equal to start odometer');
+  }
+  if (fuelConsumed !== undefined && (!Number.isFinite(fuelConsumed) || fuelConsumed < 0 || fuelConsumed > 100000)) {
+    throw new ApiError(400, 'Fuel consumed must be between 0 and 100,000 litres');
+  }
+  if (notes !== undefined && (typeof notes !== 'string' || notes.length > 1000)) {
+    throw new ApiError(400, 'Trip notes must be 1,000 characters or fewer');
+  }
+
+  const assignment = await VehicleAssignment.findOneAndUpdate(
+    { _id: req.params.id, driver: req.user._id, status: 'assigned' },
+    {
+      $set: {
+        status: 'completed',
+        tripSheet: {
+          startOdometer,
+          endOdometer,
+          ...(fuelConsumed !== undefined && { fuelConsumed }),
+          ...(notes?.trim() && { notes: notes.trim() }),
+          submittedAt: new Date(),
+        },
+      },
+    },
+    { new: true, runValidators: true }
+  ).populate(assignmentPopulate);
+
+  if (!assignment) {
+    throw new ApiError(404, 'Assigned trip not found or it has already been completed');
+  }
+  res.json({ data: assignment });
 });
 
 // PATCH /api/vehicle-assignments/:id/assign

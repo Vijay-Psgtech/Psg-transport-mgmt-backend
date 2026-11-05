@@ -64,6 +64,8 @@ All authenticated routes use the HTTP-only `psg_transport_session` cookie (confi
 | `PUT` | `/api/service-history/:id` | Admin, transport officer | Update a service record |
 | `DELETE` | `/api/service-history/:id` | Admin | Delete a service record |
 | `GET` | `/api/vehicle-assignments` | Admin, transport officer, transport user | List assignments; transport users see only their own requests |
+| `GET` | `/api/vehicle-assignments/my-trips` | Driver | List the signed-in driver's assigned and completed trips |
+| `PATCH` | `/api/vehicle-assignments/:id/trip-sheet` | Assigned driver | Submit odometer readings and optional fuel/notes; records the trip sheet and completes the assignment |
 | `GET` | `/api/vehicle-assignments/availability` | Admin, transport officer | Find vehicles and licensed drivers free for a time window |
 | `POST` | `/api/vehicle-assignments` | Admin, transport officer, transport user | Create a schedule assignment or submit a user request |
 | `PATCH` | `/api/vehicle-assignments/:id/assign` | Admin, transport officer | Assign an available vehicle and driver to a pending user request |
