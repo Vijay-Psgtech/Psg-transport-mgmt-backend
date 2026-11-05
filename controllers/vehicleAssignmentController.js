@@ -1,3 +1,4 @@
+import mongoose from 'mongoose';
 import VehicleAssignment from '../models/VehicleAssignment.js';
 import TripSheet from '../models/TripSheet.js';
 import Vehicle from '../models/Vehicle.js';
@@ -120,6 +121,48 @@ export const listVehicleAssignments = asyncHandler(async (req, res) => {
   const filter = {};
   if (['pending', 'assigned', 'rejected', 'cancelled', 'completed'].includes(req.query.status)) {
     filter.status = req.query.status;
+  }
+  if (['availability', 'request'].includes(req.query.type)) {
+    filter.type = req.query.type;
+  }
+  if (req.query.from || req.query.to) {
+    const dateFilter = {};
+    for (const [key, value, suffix] of [
+      ['from', req.query.from, 'T00:00:00.000Z'],
+      ['to', req.query.to, 'T23:59:59.999Z'],
+    ]) {
+      if (!value) continue;
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+        throw new ApiError(400, `The ${key} date must use YYYY-MM-DD format`);
+      }
+      const date = new Date(`${value}${suffix}`);
+      if (Number.isNaN(date.getTime()) || date.toISOString().slice(0, 10) !== value) {
+        throw new ApiError(400, `The ${key} date is invalid`);
+      }
+      dateFilter[key === 'from' ? '$gte' : '$lte'] = date;
+    }
+    if (dateFilter.$gte && dateFilter.$lte && dateFilter.$gte > dateFilter.$lte) {
+      throw new ApiError(400, 'The start date must be on or before the end date');
+    }
+    filter.startAt = dateFilter;
+  }
+  const search = typeof req.query.search === 'string' ? req.query.search.trim().slice(0, 100) : '';
+  if (search) {
+    const expression = new RegExp(search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+    const [vehicleIds, userIds] = await Promise.all([
+      Vehicle.find({ $or: [{ regNo: expression }, { make: expression }, { model: expression }] }).distinct('_id'),
+      User.find({ $or: [{ name: expression }, { phone: expression }] }).distinct('_id'),
+    ]);
+    const searchConditions = [
+      { vehicle: { $in: vehicleIds } },
+      { driver: { $in: userIds } },
+      { requestedBy: { $in: userIds } },
+      { purpose: expression },
+      { pickupLocation: expression },
+      { destination: expression },
+    ];
+    if (mongoose.isValidObjectId(search)) searchConditions.push({ _id: search });
+    filter.$and = [{ $or: searchConditions }];
   }
   if (req.user.role === ROLES.TRANSPORT_USER) {
     filter.type = 'request';
