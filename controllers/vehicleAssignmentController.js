@@ -1,4 +1,5 @@
 import VehicleAssignment from '../models/VehicleAssignment.js';
+import TripSheet from '../models/TripSheet.js';
 import Vehicle from '../models/Vehicle.js';
 import User from '../models/User.js';
 import { ROLES } from '../constants/roles.js';
@@ -197,7 +198,28 @@ export const createVehicleAssignment = asyncHandler(async (req, res) => {
   res.status(201).json({ data: assignment });
 });
 
-// PATCH /api/vehicle-assignments/:id/trip-sheet
+// GET /api/vehicle-assignments/:id/trip-sheets?page=&limit=
+export const listTripSheets = asyncHandler(async (req, res) => {
+  const assignment = await VehicleAssignment.findById(req.params.id).select('driver');
+  if (!assignment) throw new ApiError(404, 'Vehicle assignment not found');
+  if (!isManager(req.user) && !assignment.driver?.equals(req.user._id)) {
+    throw new ApiError(403, 'You do not have permission to view these trip sheets', 'FORBIDDEN');
+  }
+
+  const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
+  const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 20, 1), 100);
+  const filter = { assignment: assignment._id };
+  const [data, total] = await Promise.all([
+    TripSheet.find(filter)
+      .sort({ submittedAt: -1 })
+      .skip((page - 1) * limit)
+      .limit(limit),
+    TripSheet.countDocuments(filter),
+  ]);
+  res.json({ data, pagination: { page, limit, total, pages: Math.max(Math.ceil(total / limit), 1) } });
+});
+
+// POST /api/vehicle-assignments/:id/trip-sheets
 export const submitTripSheet = asyncHandler(async (req, res) => {
   const { startOdometer, endOdometer, fuelConsumed, notes } = req.body;
   const isOdometer = (value) => Number.isInteger(value) && value >= 0 && value <= 99999999;
@@ -214,27 +236,25 @@ export const submitTripSheet = asyncHandler(async (req, res) => {
     throw new ApiError(400, 'Trip notes must be 1,000 characters or fewer');
   }
 
-  const assignment = await VehicleAssignment.findOneAndUpdate(
-    { _id: req.params.id, driver: req.user._id, status: 'assigned' },
-    {
-      $set: {
-        status: 'completed',
-        tripSheet: {
-          startOdometer,
-          endOdometer,
-          ...(fuelConsumed !== undefined && { fuelConsumed }),
-          ...(notes?.trim() && { notes: notes.trim() }),
-          submittedAt: new Date(),
-        },
-      },
-    },
-    { new: true, runValidators: true }
-  ).populate(assignmentPopulate);
-
+  const assignment = await VehicleAssignment.findOne({
+    _id: req.params.id,
+    driver: req.user._id,
+    status: 'assigned',
+  }).select('vehicle');
   if (!assignment) {
     throw new ApiError(404, 'Assigned trip not found or it has already been completed');
   }
-  res.json({ data: assignment });
+  const tripSheet = await TripSheet.create({
+    assignment: assignment._id,
+    driver: req.user._id,
+    vehicle: assignment.vehicle,
+    startOdometer,
+    endOdometer,
+    ...(fuelConsumed !== undefined && { fuelConsumed }),
+    ...(notes?.trim() && { notes: notes.trim() }),
+    submittedAt: new Date(),
+  });
+  res.status(201).json({ data: tripSheet });
 });
 
 // PATCH /api/vehicle-assignments/:id/assign

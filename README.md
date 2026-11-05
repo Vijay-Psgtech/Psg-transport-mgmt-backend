@@ -65,13 +65,15 @@ All authenticated routes use the HTTP-only `psg_transport_session` cookie (confi
 | `DELETE` | `/api/service-history/:id` | Admin | Delete a service record |
 | `GET` | `/api/vehicle-assignments` | Admin, transport officer, transport user | List assignments; transport users see only their own requests |
 | `GET` | `/api/vehicle-assignments/my-trips` | Driver | List the signed-in driver's assigned and completed trips |
-| `PATCH` | `/api/vehicle-assignments/:id/trip-sheet` | Assigned driver | Submit odometer readings and optional fuel/notes; records the trip sheet and completes the assignment |
+| `PATCH` | `/api/vehicle-assignments/:id/trip-sheet` | Assigned driver | Append a time-stamped daily trip entry with odometer readings and optional fuel/notes; the assignment stays open |
 | `GET` | `/api/vehicle-assignments/availability` | Admin, transport officer | Find vehicles and licensed drivers free for a time window |
 | `POST` | `/api/vehicle-assignments` | Admin, transport officer, transport user | Create a schedule assignment or submit a user request |
 | `PATCH` | `/api/vehicle-assignments/:id/assign` | Admin, transport officer | Assign an available vehicle and driver to a pending user request |
 | `PATCH` | `/api/vehicle-assignments/:id/status` | Admin, transport officer, transport user | Reject, complete, cancel, or cancel one's own pending request |
 
 Vehicle assignments use a start/end date-time window. The same vehicle or driver may have multiple assignments at different times, but overlapping assignments are rejected. Vehicle records no longer store an assigned driver.
+
+Drivers can submit multiple time-stamped trip entries against an active assignment. Each entry's trip start and end must fall within the assignment window. Transport officers review submitted entries and close the overall assignment when the scheduled trip is finished.
 
 Service history records include a vehicle, service category and status, service date and odometer, work description, provider, cost, optional next-service date/odometer, and notes. List filters include search, vehicle, service type, status, and service-date range. Service records are kept in their own collection because a vehicle's maintenance history can grow over time.
 

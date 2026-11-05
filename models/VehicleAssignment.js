@@ -3,26 +3,6 @@ import { VEHICLE_TYPES } from '../constants/vehicle.js';
 
 const { Schema } = mongoose;
 
-const tripSheetSchema = new Schema(
-  {
-    startOdometer: { type: Number, min: 0, max: 99999999, required: true },
-    endOdometer: {
-      type: Number,
-      min: 0,
-      max: 99999999,
-      required: true,
-      validate: {
-        validator(value) { return value >= this.startOdometer; },
-        message: 'End odometer must be greater than or equal to start odometer',
-      },
-    },
-    fuelConsumed: { type: Number, min: 0, max: 100000 },
-    notes: { type: String, trim: true, maxlength: 1000 },
-    submittedAt: { type: Date, required: true },
-  },
-  { _id: false }
-);
-
 const vehicleAssignmentSchema = new Schema(
   {
     type: {
@@ -84,7 +64,6 @@ const vehicleAssignmentSchema = new Schema(
       required: function () { return this.type === 'request'; },
     },
     notes: { type: String, trim: true, maxlength: 500 },
-    tripSheet: { type: tripSheetSchema, default: undefined },
     status: {
       type: String,
       enum: ['pending', 'assigned', 'rejected', 'cancelled', 'completed'],
