@@ -97,8 +97,8 @@ export const getDashboardReport = asyncHandler(async (req, res) => {
         },
       },
     ]),
-    VehicleAssignment.distinct('vehicle', { status: 'assigned', endAt: { $gt: now } }),
-    VehicleAssignment.distinct('driver', { status: 'assigned', endAt: { $gt: now } }),
+    VehicleAssignment.distinct('vehicle', { status: 'assigned' }),
+    VehicleAssignment.distinct('driver', { status: 'assigned' }),
     Vehicle.countDocuments({ documents: { $elemMatch: { expiryDate: { $lte: in30 } } } }),
     // Soonest vehicle documents that are expired or expire within 30 days
     Vehicle.aggregate([

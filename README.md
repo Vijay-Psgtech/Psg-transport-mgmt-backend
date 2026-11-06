@@ -66,14 +66,16 @@ All authenticated routes use the HTTP-only `psg_transport_session` cookie (confi
 | `GET` | `/api/vehicle-assignments` | Admin, transport officer, transport user | List assignments; transport users see only their own requests |
 | `GET` | `/api/vehicle-assignments/my-trips` | Driver | List the signed-in driver's assigned and completed trips |
 | `PATCH` | `/api/vehicle-assignments/:id/trip-sheet` | Assigned driver | Append a time-stamped daily trip entry with odometer readings and optional fuel/notes; the assignment stays open |
-| `GET` | `/api/vehicle-assignments/availability` | Admin, transport officer | Find vehicles and licensed drivers free for a time window |
+| `GET` | `/api/vehicle-assignments/availability` | Admin, transport officer | Find unassigned vehicles and licensed drivers; optionally filter for a request's time window, capacity, and vehicle type |
 | `POST` | `/api/vehicle-assignments` | Admin, transport officer, transport user | Create a schedule assignment or submit a user request |
 | `PATCH` | `/api/vehicle-assignments/:id/assign` | Admin, transport officer | Assign an available vehicle and driver to a pending user request |
 | `PATCH` | `/api/vehicle-assignments/:id/status` | Admin, transport officer, transport user | Reject, complete, cancel, or cancel one's own pending request |
+| `GET` | `/api/vehicle-assignments/:id/trip-sheets` | Admin, transport officer, assigned driver | Review paginated daily trip entries |
+| `POST` | `/api/vehicle-assignments/:id/trip-sheets` | Assigned driver | Submit a time-stamped daily trip entry |
 
-Vehicle assignments use a start/end date-time window. The same vehicle or driver may have multiple assignments at different times, but overlapping assignments are rejected. Vehicle records no longer store an assigned driver.
+A driver is selected per assignment and is not stored on the vehicle master. A vehicle or driver with any active assignment is unavailable until an officer completes or cancels that assignment. Officer-created assignments do not require start/end times; transport-user requests retain their requested time window, and the officer's approval checks vehicle type, passenger capacity, driver licence validity, and current availability.
 
-Drivers can submit multiple time-stamped trip entries against an active assignment. Each entry's trip start and end must fall within the assignment window. Transport officers review submitted entries and close the overall assignment when the scheduled trip is finished.
+Drivers can submit multiple time-stamped trip entries against an active assignment. Transport officers review submitted entries and close the overall assignment when the trip is finished.
 
 Service history records include a vehicle, service category and status, service date and odometer, work description, provider, cost, optional next-service date/odometer, and notes. List filters include search, vehicle, service type, status, and service-date range. Service records are kept in their own collection because a vehicle's maintenance history can grow over time.
 

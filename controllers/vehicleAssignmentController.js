@@ -16,7 +16,7 @@ const assignmentPopulate = [
   { path: 'assignedBy', select: 'name' },
 ];
 
-function licenseValidThrough(expiry, endAt) {
+function licenseValidThrough(expiry, endAt = new Date()) {
   if (!expiry) return false;
   const endOfExpiryDate = new Date(expiry);
   endOfExpiryDate.setUTCHours(23, 59, 59, 999);
@@ -34,12 +34,8 @@ function getWindow(startValue, endValue) {
   return { startAt, endAt };
 }
 
-async function getAvailableOptions(startAt, endAt, passengerCount, preferredVehicleType) {
-  const busy = await VehicleAssignment.find({
-    status: 'assigned',
-    startAt: { $lt: endAt },
-    endAt: { $gt: startAt },
-  }).select('vehicle driver');
+async function getAvailableOptions(endAt, passengerCount, preferredVehicleType) {
+  const busy = await VehicleAssignment.find({ status: 'assigned' }).select('vehicle driver');
   const busyVehicleIds = busy.map((item) => String(item.vehicle));
   const busyDriverIds = busy.map((item) => String(item.driver));
 
@@ -63,12 +59,15 @@ async function getAvailableOptions(startAt, endAt, passengerCount, preferredVehi
   return { vehicles, drivers: drivers.filter((driver) => licenseValidThrough(driver.driverProfile?.licenseExpiry, endAt)) };
 }
 
-async function assertAvailable(vehicleId, driverId, startAt, endAt, passengerCount, preferredVehicleType) {
-  if (endAt <= startAt) throw new ApiError(400, 'End time must be after start time');
-  if (startAt <= new Date()) throw new ApiError(400, 'Cannot assign a vehicle after the requested start time');
-
+async function assertAvailable(vehicleId, driverId, startAt, endAt, passengerCount, preferredVehicleType, excludeAssignmentId) {
+  if (!mongoose.isValidObjectId(vehicleId)) throw new ApiError(400, 'Select a valid fleet vehicle');
+  if (!mongoose.isValidObjectId(driverId)) throw new ApiError(400, 'Select a valid driver');
+  if (startAt && endAt && endAt <= startAt) throw new ApiError(400, 'End time must be after start time');
+  if (startAt && startAt <= new Date()) throw new ApiError(400, 'Cannot assign a vehicle after the requested start time');
+  const assignmentWindowEnd = endAt || new Date();
   const [vehicle, driver] = await Promise.all([
-    Vehicle.findOne({ _id: vehicleId, status: 'active' }).select('regNo seatingCapacity vehicleType'),
+    Vehicle.findOne({ _id: vehicleId, status: 'active' })
+      .select('regNo seatingCapacity vehicleType'),
     User.findOne({ _id: driverId, role: ROLES.DRIVER, isActive: true }).select('name driverProfile.licenseExpiry'),
   ]);
   if (!vehicle) throw new ApiError(400, 'Select an active fleet vehicle');
@@ -81,28 +80,35 @@ async function assertAvailable(vehicleId, driverId, startAt, endAt, passengerCou
   }
 
   const expiry = driver.driverProfile?.licenseExpiry;
-  if (!licenseValidThrough(expiry, endAt)) {
-    throw new ApiError(400, `${driver.name}'s driving licence is not valid through the assignment window`);
+  if (!licenseValidThrough(expiry, assignmentWindowEnd)) {
+    throw new ApiError(400, `${driver.name}'s driving licence is not valid through the requested assignment`);
   }
 
-  const conflict = await VehicleAssignment.findOne({
+  const activeVehicleAssignment = await VehicleAssignment.findOne({
     status: 'assigned',
-    startAt: { $lt: endAt },
-    endAt: { $gt: startAt },
-    $or: [{ vehicle: vehicleId }, { driver: driverId }],
-  }).populate('vehicle', 'regNo').populate('driver', 'name');
-  if (conflict) {
-    const resource = String(conflict.vehicle?._id) === String(vehicleId)
-      ? `Vehicle ${conflict.vehicle.regNo}`
-      : `Driver ${conflict.driver.name}`;
-    throw new ApiError(409, `${resource} already has an assignment during this time`);
+    vehicle: vehicleId,
+    ...(excludeAssignmentId && { _id: { $ne: excludeAssignmentId } }),
+  }).populate('vehicle', 'regNo');
+  if (activeVehicleAssignment) {
+    throw new ApiError(409, `Vehicle ${activeVehicleAssignment.vehicle?.regNo || ''} already has an active assignment`.trim());
   }
+  const activeDriverAssignment = await VehicleAssignment.findOne({
+    status: 'assigned',
+    driver: driverId,
+    ...(excludeAssignmentId && { _id: { $ne: excludeAssignmentId } }),
+  }).populate('driver', 'name');
+  if (activeDriverAssignment) {
+    throw new ApiError(409, `Driver ${activeDriverAssignment.driver?.name || ''} already has an active assignment`.trim());
+  }
+
   return { vehicle, driver };
 }
 
-// GET /api/vehicle-assignments/availability?startAt=&endAt=
+// GET /api/vehicle-assignments/availability?startAt=&endAt= (optional request window)
 export const getAssignmentAvailability = asyncHandler(async (req, res) => {
-  const { startAt, endAt } = getWindow(req.query.startAt, req.query.endAt);
+  let startAt;
+  let endAt;
+  if (req.query.startAt || req.query.endAt) ({ startAt, endAt } = getWindow(req.query.startAt, req.query.endAt));
   const passengerCount = req.query.passengerCount === undefined ? undefined : Number(req.query.passengerCount);
   if (passengerCount !== undefined && (!Number.isInteger(passengerCount) || passengerCount < 1 || passengerCount > 100)) {
     throw new ApiError(400, 'Passenger count must be between 1 and 100');
@@ -111,7 +117,7 @@ export const getAssignmentAvailability = asyncHandler(async (req, res) => {
   if (preferredVehicleType && !VEHICLE_TYPES.includes(preferredVehicleType)) {
     throw new ApiError(400, 'Vehicle type is invalid');
   }
-  res.json({ data: await getAvailableOptions(startAt, endAt, passengerCount, preferredVehicleType) });
+  res.json({ data: await getAvailableOptions(endAt, passengerCount, preferredVehicleType) });
 });
 
 // GET /api/vehicle-assignments?page=&limit=&status=
@@ -144,7 +150,10 @@ export const listVehicleAssignments = asyncHandler(async (req, res) => {
     if (dateFilter.$gte && dateFilter.$lte && dateFilter.$gte > dateFilter.$lte) {
       throw new ApiError(400, 'The start date must be on or before the end date');
     }
-    filter.startAt = dateFilter;
+    filter.$or = [
+      { startAt: dateFilter },
+      { startAt: { $exists: false }, createdAt: dateFilter },
+    ];
   }
   const search = typeof req.query.search === 'string' ? req.query.search.trim().slice(0, 100) : '';
   if (search) {
@@ -224,16 +233,13 @@ export const createVehicleAssignment = asyncHandler(async (req, res) => {
   }
 
   if (!isManager(req.user)) throw new ApiError(403, 'You do not have permission to create assignments', 'FORBIDDEN');
-  const { startAt, endAt } = getWindow(req.body.startAt, req.body.endAt);
-  const { vehicle, driver } = await assertAvailable(req.body.vehicle, req.body.driver, startAt, endAt);
+  const { vehicle, driver } = await assertAvailable(req.body.vehicle, req.body.driver);
   const assignment = await VehicleAssignment.create({
     type: 'availability',
     status: 'assigned',
     vehicle: vehicle._id,
     driver: driver._id,
     assignedBy: req.user._id,
-    startAt,
-    endAt,
     purpose: req.body.purpose,
     notes: req.body.notes,
   });
@@ -310,7 +316,8 @@ export const assignVehicleRequest = asyncHandler(async (req, res) => {
     assignment.startAt,
     assignment.endAt,
     assignment.passengerCount,
-    assignment.preferredVehicleType
+    assignment.preferredVehicleType,
+    assignment._id
   );
   assignment.vehicle = vehicle._id;
   assignment.driver = driver._id;

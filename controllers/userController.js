@@ -30,25 +30,23 @@ async function assertNoUpcomingDriverAssignments(userId) {
   const assignment = await VehicleAssignment.findOne({
     driver: userId,
     status: 'assigned',
-    endAt: { $gt: new Date() },
   }).select('_id');
   if (assignment) {
-    throw new ApiError(409, "Cancel or complete the driver's upcoming vehicle assignments before changing this account");
+    throw new ApiError(409, "Close or cancel the driver's active vehicle assignment before changing this account");
   }
 }
 
 async function assertDriverLicenceCoversUpcomingAssignments(userId, licenseExpiry) {
-  const latest = await VehicleAssignment.findOne({
+  const active = await VehicleAssignment.findOne({
     driver: userId,
     status: 'assigned',
-    endAt: { $gt: new Date() },
-  }).sort({ endAt: -1 }).select('endAt');
-  if (!latest) return;
+  }).select('_id');
+  if (!active) return;
 
   const expiryEnd = licenseExpiry ? new Date(licenseExpiry) : null;
   expiryEnd?.setUTCHours(23, 59, 59, 999);
-  if (!expiryEnd || expiryEnd < latest.endAt) {
-    throw new ApiError(409, "The driver's updated licence expiry does not cover upcoming vehicle assignments");
+  if (!expiryEnd || expiryEnd < new Date()) {
+    throw new ApiError(409, "The driver's updated licence must remain valid while an assignment is active");
   }
 }
 
