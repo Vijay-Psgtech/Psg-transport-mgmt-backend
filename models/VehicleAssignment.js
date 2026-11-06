@@ -26,10 +26,13 @@ const vehicleAssignmentSchema = new Schema(
       required: function () { return this.type === 'request'; },
     },
     assignedBy: { type: Schema.Types.ObjectId, ref: 'User' },
-    startAt: { type: Date, required: true },
+    startAt: {
+      type: Date,
+      required: function () { return this.type === 'request'; },
+    },
     endAt: {
       type: Date,
-      required: true,
+      required: function () { return this.type === 'request'; },
       validate: {
         validator(value) { return !this.startAt || value > this.startAt; },
         message: 'End time must be after start time',

@@ -163,9 +163,8 @@ export const updateVehicle = asyncHandler(async (req, res) => {
       const upcoming = await VehicleAssignment.findOne({
         vehicle: vehicle._id,
         status: 'assigned',
-        endAt: { $gt: new Date() },
       }).select('_id');
-      if (upcoming) throw new ApiError(409, 'Cancel or complete upcoming vehicle assignments before changing its status');
+      if (upcoming) throw new ApiError(409, 'Close or cancel the active vehicle assignment before changing its status');
     }
     previousDocuments = vehicle.documents.map((document) => ({
       proofImage: document.proofImage?.toObject?.() || document.proofImage,
@@ -192,9 +191,8 @@ export const deleteVehicle = asyncHandler(async (req, res) => {
   const upcoming = await VehicleAssignment.findOne({
     vehicle: vehicle._id,
     status: 'assigned',
-    endAt: { $gt: new Date() },
   }).select('_id');
-  if (upcoming) throw new ApiError(409, 'Cancel or complete upcoming vehicle assignments before deleting it');
+  if (upcoming) throw new ApiError(409, 'Close or cancel the active vehicle assignment before deleting it');
   await vehicle.deleteOne();
   await removeVehicleProofFiles(savedProofs(vehicle.documents));
   res.json({ message: 'Vehicle deleted' });
