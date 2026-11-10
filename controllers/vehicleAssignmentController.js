@@ -249,23 +249,33 @@ export const createVehicleAssignment = asyncHandler(async (req, res) => {
 
 // GET /api/vehicle-assignments/:id/trip-sheets?page=&limit=
 export const listTripSheets = asyncHandler(async (req, res) => {
-  const assignment = await VehicleAssignment.findById(req.params.id).select('driver');
+  const assignment = await VehicleAssignment.findById(req.params.id);
   if (!assignment) throw new ApiError(404, 'Vehicle assignment not found');
   if (!isManager(req.user) && !assignment.driver?.equals(req.user._id)) {
     throw new ApiError(403, 'You do not have permission to view these trip sheets', 'FORBIDDEN');
   }
+  await assignment.populate([
+    { path: 'vehicle', select: 'regNo make model vehicleType seatingCapacity' },
+    { path: 'driver', select: 'name phone' },
+  ]);
 
   const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
   const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 20, 1), 100);
   const filter = { assignment: assignment._id };
   const [data, total] = await Promise.all([
     TripSheet.find(filter)
+      .populate('vehicle', 'regNo make model')
+      .populate('driver', 'name phone')
       .sort({ submittedAt: -1 })
       .skip((page - 1) * limit)
       .limit(limit),
     TripSheet.countDocuments(filter),
   ]);
-  res.json({ data, pagination: { page, limit, total, pages: Math.max(Math.ceil(total / limit), 1) } });
+  res.json({
+    assignment,
+    data,
+    pagination: { page, limit, total, pages: Math.max(Math.ceil(total / limit), 1) },
+  });
 });
 
 // POST /api/vehicle-assignments/:id/trip-sheets

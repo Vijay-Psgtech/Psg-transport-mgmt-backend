@@ -70,7 +70,7 @@ All authenticated routes use the HTTP-only `psg_transport_session` cookie (confi
 | `POST` | `/api/vehicle-assignments` | Admin, transport officer, transport user | Create a schedule assignment or submit a user request |
 | `PATCH` | `/api/vehicle-assignments/:id/assign` | Admin, transport officer | Assign an available vehicle and driver to a pending user request |
 | `PATCH` | `/api/vehicle-assignments/:id/status` | Admin, transport officer, transport user | Reject, complete, cancel, or cancel one's own pending request |
-| `GET` | `/api/vehicle-assignments/:id/trip-sheets` | Admin, transport officer, assigned driver | Review paginated daily trip entries |
+| `GET` | `/api/vehicle-assignments/:id/trip-sheets` | Admin, transport officer, assigned driver | Review paginated daily trip entries with assignment, vehicle, and driver details |
 | `POST` | `/api/vehicle-assignments/:id/trip-sheets` | Assigned driver | Submit a time-stamped daily trip entry |
 
 A driver is selected per assignment and is not stored on the vehicle master. A vehicle or driver with any active assignment is unavailable until an officer completes or cancels that assignment. Officer-created assignments do not require start/end times; transport-user requests retain their requested time window, and the officer's approval checks vehicle type, passenger capacity, driver licence validity, and current availability.
