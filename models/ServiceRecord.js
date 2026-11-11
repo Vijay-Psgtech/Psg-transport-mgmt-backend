@@ -24,6 +24,7 @@ const serviceRecordSchema = new Schema(
     nextServiceDate: Date,
     nextServiceOdometer: { type: Number, min: [0, 'Next service odometer cannot be negative'] },
     notes: { type: String, trim: true, maxlength: 1000 },
+    invoiceFilename: { type: String, default: null },
     createdBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
   },
   { timestamps: true }
