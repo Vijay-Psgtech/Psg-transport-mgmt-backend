@@ -1,4 +1,5 @@
-import { mkdir, unlink } from 'node:fs/promises';
+import crypto from 'node:crypto';
+import { mkdir, rename, unlink } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -15,6 +16,14 @@ export async function removeServiceInvoiceFile(filename) {
   } catch (error) {
     if (error.code !== 'ENOENT') throw error;
   }
+}
+
+export async function storeServiceInvoiceFile(file, registrationNumber, recordId) {
+  const safeRegistration = registrationNumber.replace(/[^A-Z0-9-]/gi, '').toUpperCase();
+  if (!safeRegistration) throw new Error('Vehicle registration number cannot be used in invoice filename');
+  const filename = `${safeRegistration}_invoice_${recordId}.pdf`;
+  await rename(file.path, path.join(directory, filename));
+  return filename;
 }
 
 export function serviceInvoicePath(filename) {

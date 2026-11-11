@@ -3,7 +3,9 @@ import ServiceRecord from '../models/ServiceRecord.js';
 import Vehicle from '../models/Vehicle.js';
 import ApiError from '../utils/ApiError.js';
 import asyncHandler from '../utils/asyncHandler.js';
-import { removeServiceInvoiceFile, serviceInvoicePath } from '../utils/serviceInvoiceFiles.js';
+import {
+  removeServiceInvoiceFile, serviceInvoicePath, storeServiceInvoiceFile,
+} from '../utils/serviceInvoiceFiles.js';
 
 const SERVICE_TYPES = ['routine', 'oil_change', 'repair', 'inspection', 'tyres', 'battery', 'other'];
 const SERVICE_STATUSES = ['completed', 'scheduled', 'in_progress', 'cancelled'];
@@ -26,8 +28,9 @@ function extract(body) {
 }
 
 async function assertVehicleExists(vehicleId) {
-  const vehicle = await Vehicle.findById(vehicleId).select('_id');
+  const vehicle = await Vehicle.findById(vehicleId).select('_id regNo');
   if (!vehicle) throw new ApiError(400, 'Select a valid vehicle');
+  return vehicle;
 }
 
 // GET /api/service-history?page=&limit=&search=&vehicle=&serviceType=&status=&from=&to=
@@ -131,17 +134,22 @@ export const getServiceInvoice = asyncHandler(async (req, res, next) => {
 // POST /api/service-history
 export const createServiceRecord = asyncHandler(async (req, res) => {
   let record;
+  let invoiceFilename;
   try {
     const fields = extract(req.body);
-    await assertVehicleExists(fields.vehicle);
-    record = await ServiceRecord.create({
+    const vehicle = await assertVehicleExists(fields.vehicle);
+    record = new ServiceRecord({
       ...fields,
-      invoiceFilename: req.file?.filename,
       createdBy: req.user._id,
     });
+    if (req.file) {
+      invoiceFilename = await storeServiceInvoiceFile(req.file, vehicle.regNo, record._id.toString());
+      record.invoiceFilename = invoiceFilename;
+    }
+    await record.save();
   } catch (error) {
     try {
-      await removeServiceInvoiceFile(req.file?.filename);
+      await removeServiceInvoiceFile(invoiceFilename || req.file?.filename);
     } catch (cleanupError) {
       console.error('Unable to remove unclaimed service invoice upload:', cleanupError);
     }
@@ -155,20 +163,26 @@ export const createServiceRecord = asyncHandler(async (req, res) => {
 export const updateServiceRecord = asyncHandler(async (req, res) => {
   let record;
   let previousInvoiceFilename;
+  let invoiceFilename;
   try {
     record = await ServiceRecord.findById(req.params.id);
     if (!record) throw new ApiError(404, 'Service record not found');
     const fields = extract(req.body);
-    if (fields.vehicle) await assertVehicleExists(fields.vehicle);
+    const vehicle = req.file
+      ? await assertVehicleExists(fields.vehicle || record.vehicle)
+      : (fields.vehicle ? await assertVehicleExists(fields.vehicle) : null);
     previousInvoiceFilename = record.invoiceFilename;
+    if (req.file) {
+      invoiceFilename = await storeServiceInvoiceFile(req.file, vehicle.regNo, record._id.toString());
+    }
     record.set({
       ...fields,
-      ...(req.file ? { invoiceFilename: req.file.filename } : {}),
+      ...(req.file ? { invoiceFilename } : {}),
     });
     await record.save();
   } catch (error) {
     try {
-      await removeServiceInvoiceFile(req.file?.filename);
+      await removeServiceInvoiceFile(invoiceFilename || req.file?.filename);
     } catch (cleanupError) {
       console.error('Unable to remove unclaimed service invoice upload:', cleanupError);
     }
