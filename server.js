@@ -11,6 +11,7 @@ import vehicleRoutes from './routes/vehicleRoutes.js';
 import vehicleAssignmentRoutes from './routes/vehicleAssignmentRoutes.js';
 import serviceHistoryRoutes from './routes/serviceHistoryRoutes.js';
 import reportRoutes from './routes/reportRoutes.js';
+import tripAdvanceRoutes from './routes/tripAdvanceRoutes.js';
 import { notFound, errorHandler } from './middleware/errorHandler.js';
 
 for (const key of ['JWT_ACCESS_SECRET', 'JWT_REFRESH_SECRET']) {
@@ -37,6 +38,7 @@ app.use('/api/vehicles', vehicleRoutes);
 app.use('/api/vehicle-assignments', vehicleAssignmentRoutes);
 app.use('/api/service-history', serviceHistoryRoutes);
 app.use('/api/reports', reportRoutes);
+app.use('/api/trip-advances', tripAdvanceRoutes);
 
 app.use(notFound);
 app.use(errorHandler);
