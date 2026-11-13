@@ -3,6 +3,7 @@ import PDFDocument from 'pdfkit';
 import TripAdvance from '../models/TripAdvance.js';
 import TripAdvanceCounter from '../models/TripAdvanceCounter.js';
 import VehicleAssignment from '../models/VehicleAssignment.js';
+import writeTripAdvanceReceipt from '../utils/tripAdvanceReceiptPdf.js';
 import ApiError from '../utils/ApiError.js';
 import asyncHandler from '../utils/asyncHandler.js';
 import { ROLES } from '../constants/roles.js';
@@ -41,21 +42,6 @@ function parseAmount(value, label) {
     throw new ApiError(400, `${label} must be a positive amount with at most two decimal places`);
   }
   return amount;
-}
-
-function formatDate(value) {
-  return new Intl.DateTimeFormat('en-IN', {
-    day: '2-digit',
-    month: 'long',
-    year: 'numeric',
-    timeZone: 'UTC',
-  }).format(value);
-}
-
-function formatAmount(value) {
-  return `INR ${new Intl.NumberFormat('en-IN', {
-    minimumFractionDigits: 2,
-  }).format(value)}`;
 }
 
 export async function generateReceiptNo(year) {
@@ -199,41 +185,5 @@ export const downloadTripAdvanceReceipt = asyncHandler(async (req, res, next) =>
   res.setHeader('Content-Disposition', `attachment; filename="${advance.receiptNo}.pdf"`);
   doc.on('error', next);
   doc.pipe(res);
-  doc.fontSize(20).font('Helvetica-Bold').text('LONG TRIP ADVANCE RECEIPT', { align: 'center' });
-  doc.moveDown(0.5).fontSize(10).font('Helvetica').fillColor('#526071')
-    .text('PSG Transport Management', { align: 'center' });
-  doc.moveDown(1.5).strokeColor('#d9dee5').moveTo(52, doc.y).lineTo(543, doc.y).stroke();
-  doc.moveDown();
-
-  const rows = [
-    ['Receipt number', advance.receiptNo],
-    ['Request date', formatDate(advance.createdAt)],
-    ['Approved date', formatDate(advance.approvedDate)],
-    ['Driver', advance.driver?.name || 'Driver'],
-    ['Vehicle number', advance.vehicle?.regNo || 'Vehicle'],
-    ['Trip destination', advance.destination],
-    ['Trip purpose', advance.purpose],
-    ['Departure date', formatDate(advance.departureDate)],
-    ['Return date', formatDate(advance.returnDate)],
-    ['Requested amount', formatAmount(advance.requestedAmount)],
-    ['Approved advance', formatAmount(advance.approvedAmount)],
-  ];
-  for (const [label, value] of rows) {
-    doc.font('Helvetica-Bold').fontSize(10).fillColor('#1b2430').text(label, 60, doc.y, { continued: true, width: 150 });
-    doc.font('Helvetica').text(value, { width: 330 });
-    doc.moveDown(0.55);
-  }
-  if (advance.remarks) {
-    doc.moveDown(0.5).font('Helvetica-Bold').text('Driver remarks');
-    doc.moveDown(0.2).font('Helvetica').text(advance.remarks, { width: 470 });
-  }
-  if (advance.officerRemarks) {
-    doc.moveDown(0.8).font('Helvetica-Bold').text('Officer remarks');
-    doc.moveDown(0.2).font('Helvetica').text(advance.officerRemarks, { width: 470 });
-  }
-  doc.moveDown(2).fontSize(9).fillColor('#526071')
-    .text(`Approved by ${advance.reviewedBy?.name || 'Transport Officer'}`, { align: 'left' })
-    .moveDown(0.3)
-    .text('This computer-generated receipt does not require a signature.', { align: 'left' });
-  doc.end();
+  writeTripAdvanceReceipt(doc, advance);
 });
