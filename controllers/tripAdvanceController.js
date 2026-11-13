@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import PDFDocument from 'pdfkit';
 import TripAdvance from '../models/TripAdvance.js';
+import TripAdvanceCounter from '../models/TripAdvanceCounter.js';
 import VehicleAssignment from '../models/VehicleAssignment.js';
 import ApiError from '../utils/ApiError.js';
 import asyncHandler from '../utils/asyncHandler.js';
@@ -55,6 +56,15 @@ function formatAmount(value) {
   return `INR ${new Intl.NumberFormat('en-IN', {
     minimumFractionDigits: 2,
   }).format(value)}`;
+}
+
+export async function generateReceiptNo(year) {
+  const counter = await TripAdvanceCounter.findOneAndUpdate(
+    { _id: `TAR-${year}` },
+    { $inc: { sequence: 1 } },
+    { new: true, upsert: true, setDefaultsOnInsert: true }
+  );
+  return `TAR-${year}-${String(counter.sequence).padStart(5, '0')}`;
 }
 
 // GET /api/trip-advances?page=&limit=&status=
@@ -151,7 +161,7 @@ export const decideTripAdvance = asyncHandler(async (req, res) => {
     }
     update.approvedAmount = approvedAmount;
     update.approvedDate = now;
-    update.receiptNo = `TAR-${now.getFullYear()}-${String(req.params.id).toUpperCase()}`;
+    update.receiptNo = await generateReceiptNo(now.getFullYear());
     update.rejectionReason = '';
   } else {
     update.rejectionReason = parseText(req.body.rejectionReason, 'Rejection reason', 1000);

@@ -70,7 +70,7 @@ All authenticated routes use the HTTP-only `psg_transport_session` cookie (confi
 | `POST` | `/api/vehicle-assignments` | Admin, transport officer, transport user | Create a schedule assignment or submit a user request |
 | `GET` | `/api/trip-advances` | Driver, transport officer | Drivers see their own requests and assigned vehicle; officers can review all requests or filter by status |
 | `POST` | `/api/trip-advances` | Driver | Submit a trip advance request using the driver's active assigned vehicle |
-| `PATCH` | `/api/trip-advances/:id/decision` | Transport officer | Approve or reject a pending advance; approval generates a receipt number |
+| `PATCH` | `/api/trip-advances/:id/decision` | Transport officer | Approve or reject a pending advance; approval generates a sequential `TAR-YYYY-00001` receipt number |
 | `GET` | `/api/trip-advances/:id/receipt` | Owning driver, transport officer | Download a server-generated PDF receipt for an approved request |
 | `PATCH` | `/api/vehicle-assignments/:id/assign` | Admin, transport officer | Assign an available vehicle and driver to a pending user request |
 | `PATCH` | `/api/vehicle-assignments/:id/status` | Admin, transport officer, transport user | Reject, complete, cancel, or cancel one's own pending request |
