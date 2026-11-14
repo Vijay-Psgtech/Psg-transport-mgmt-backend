@@ -3,6 +3,19 @@ import { VEHICLE_TYPES } from '../constants/vehicle.js';
 
 const { Schema } = mongoose;
 
+const tripFeedbackSchema = new Schema(
+  {
+    experience: {
+      type: String,
+      enum: ['good', 'bad'],
+      required: true,
+    },
+    remarks: { type: String, trim: true, maxlength: 1000, default: '' },
+    submittedAt: { type: Date, required: true },
+  },
+  { _id: false }
+);
+
 const vehicleAssignmentSchema = new Schema(
   {
     type: {
@@ -67,6 +80,7 @@ const vehicleAssignmentSchema = new Schema(
       required: function () { return this.type === 'request'; },
     },
     notes: { type: String, trim: true, maxlength: 500 },
+    feedback: { type: tripFeedbackSchema, default: undefined },
     status: {
       type: String,
       enum: ['pending', 'assigned', 'rejected', 'cancelled', 'completed'],

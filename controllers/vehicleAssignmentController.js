@@ -131,6 +131,8 @@ export const listVehicleAssignments = asyncHandler(async (req, res) => {
   if (['availability', 'request'].includes(req.query.type)) {
     filter.type = req.query.type;
   }
+  const feedbackOnly = req.query.feedbackOnly === 'true';
+  if (feedbackOnly) filter.feedback = { $exists: true };
   if (req.query.from || req.query.to) {
     const dateFilter = {};
     for (const [key, value, suffix] of [
@@ -183,12 +185,54 @@ export const listVehicleAssignments = asyncHandler(async (req, res) => {
   const [data, total] = await Promise.all([
     VehicleAssignment.find(filter)
       .populate(assignmentPopulate)
-      .sort({ startAt: -1, createdAt: -1 })
+      .sort(feedbackOnly ? { 'feedback.submittedAt': -1 } : { startAt: -1, createdAt: -1 })
       .skip((page - 1) * limit)
       .limit(limit),
     VehicleAssignment.countDocuments(filter),
   ]);
   res.json({ data, pagination: { page, limit, total, pages: Math.max(Math.ceil(total / limit), 1) } });
+});
+
+// POST /api/vehicle-assignments/:id/feedback
+export const submitVehicleFeedback = asyncHandler(async (req, res) => {
+  const body = req.body && typeof req.body === 'object' ? req.body : {};
+  const { experience } = body;
+  const remarks = body.remarks === undefined ? '' : body.remarks;
+  if (!['good', 'bad'].includes(experience)) {
+    throw new ApiError(400, 'Trip experience must be good or bad');
+  }
+  if (typeof remarks !== 'string' || remarks.trim().length > 1000) {
+    throw new ApiError(400, 'Feedback remarks must be 1,000 characters or fewer');
+  }
+  if (!mongoose.isValidObjectId(req.params.id)) {
+    throw new ApiError(404, 'Completed vehicle request not found');
+  }
+
+  const eligibleRequest = {
+    _id: req.params.id,
+    type: 'request',
+    requestedBy: req.user._id,
+    status: 'completed',
+  };
+  const assignment = await VehicleAssignment.findOneAndUpdate(
+    { ...eligibleRequest, feedback: { $exists: false } },
+    {
+      $set: {
+        feedback: {
+          experience,
+          remarks: remarks.trim(),
+          submittedAt: new Date(),
+        },
+      },
+    },
+    { new: true, runValidators: true }
+  ).populate(assignmentPopulate);
+
+  if (assignment) return res.status(201).json({ data: assignment });
+
+  const eligible = await VehicleAssignment.exists(eligibleRequest);
+  if (!eligible) throw new ApiError(404, 'Completed vehicle request not found');
+  throw new ApiError(409, 'Feedback has already been submitted for this trip');
 });
 
 // GET /api/vehicle-assignments/my-trips?page=&limit=
