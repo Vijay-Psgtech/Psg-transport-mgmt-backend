@@ -1,8 +1,10 @@
+import { access } from 'node:fs/promises';
 import User from '../models/User.js';
 import VehicleAssignment from '../models/VehicleAssignment.js';
 import { ROLES, ROLE_LIST } from '../constants/roles.js';
 import ApiError from '../utils/ApiError.js';
 import asyncHandler from '../utils/asyncHandler.js';
+import { driverLicensePath, removeDriverLicenseFiles } from '../utils/driverLicenseFiles.js';
 
 const PROFILE_FIELDS = [
   'licenseNumber', 'licenseClass', 'licenseExpiry', 'badgeNumber', 'bloodGroup', 'dateOfBirth',
@@ -51,6 +53,7 @@ async function assertDriverLicenceCoversUpcomingAssignments(userId, licenseExpir
 }
 
 const serializeUsers = (users) => users.map((user) => user.toJSON());
+const licenseImage = (file) => ({ filename: file.filename, mimeType: file.mimetype });
 
 async function findManageable(req) {
   const user = await User.findById(req.params.id);
@@ -118,56 +121,120 @@ export const getUser = asyncHandler(async (req, res) => {
   res.json({ data: serializeUsers([user])[0] });
 });
 
+// GET /api/users/:id/license-image/:filename
+export const getDriverLicenseImage = asyncHandler(async (req, res) => {
+  const user = await findManageable(req);
+  const image = user.driverProfile?.licenseImage;
+  if (!image?.filename || image.filename !== req.params.filename) {
+    throw new ApiError(404, 'Licence image not found');
+  }
+  const imagePath = driverLicensePath(image.filename);
+  try {
+    await access(imagePath);
+  } catch (error) {
+    if (error.code === 'ENOENT') throw new ApiError(404, 'Licence image file not found');
+    throw error;
+  }
+  res.type(image.mimeType).sendFile(imagePath);
+});
+
 // POST /api/users
 export const createUser = asyncHandler(async (req, res) => {
-  const body = req.body;
-  const role = body.role || (req.user.role === ROLES.ADMIN ? ROLES.STUDENT : ROLES.DRIVER);
-  assertCanManage(req.user, role);
-  if (typeof body.password !== 'string') throw new ApiError(400, 'Password is required');
+  let user;
+  try {
+    const body = req.body;
+    const role = body.role || (req.user.role === ROLES.ADMIN ? ROLES.STUDENT : ROLES.DRIVER);
+    assertCanManage(req.user, role);
+    if (typeof body.password !== 'string') throw new ApiError(400, 'Password is required');
+    if (req.file && role !== ROLES.DRIVER) throw new ApiError(400, 'Licence images can only be uploaded for drivers');
+    if (body.removeLicenseImage !== undefined) throw new ApiError(400, 'Cannot remove a licence image while creating an account');
 
-  const user = await User.create({
-    name: clean(body.name),
-    email: clean(body.email),
-    phone: clean(body.phone),
-    idNumber: clean(body.idNumber),
-    password: body.password,
-    role,
-    mustChangePassword: true, // the admin knows the first password, so the user must replace it
-    ...(role === ROLES.DRIVER && { driverProfile: extractProfile(body) }),
-  });
+    user = await User.create({
+      name: clean(body.name),
+      email: clean(body.email),
+      phone: clean(body.phone),
+      idNumber: clean(body.idNumber),
+      password: body.password,
+      role,
+      mustChangePassword: true, // the admin knows the first password, so the user must replace it
+      ...(role === ROLES.DRIVER && {
+        driverProfile: {
+          ...extractProfile(body),
+          ...(req.file && { licenseImage: licenseImage(req.file) }),
+        },
+      }),
+    });
+  } catch (error) {
+    try {
+      await removeDriverLicenseFiles(req.file ? [req.file] : []);
+    } catch (cleanupError) {
+      console.error('Unable to remove unclaimed driver licence image:', cleanupError);
+    }
+    throw error;
+  }
   res.status(201).json({ data: serializeUsers([user])[0], message: 'User created' });
 });
 
 // PUT /api/users/:id
 export const updateUser = asyncHandler(async (req, res) => {
-  const user = await findManageable(req);
-  const body = req.body;
-  const isSelf = user._id.equals(req.user._id);
-  let newRole = user.role;
-  if (!blank(body.role) && body.role !== user.role) {
-    if (req.user.role !== ROLES.ADMIN) throw new ApiError(403, 'Only an administrator can change roles', 'FORBIDDEN');
-    if (isSelf) throw new ApiError(400, 'You cannot change your own role');
-    newRole = body.role;
-  }
-  if (user.role === ROLES.DRIVER && newRole !== ROLES.DRIVER) {
-    await assertNoUpcomingDriverAssignments(user._id);
+  let user;
+  let previousImage;
+  try {
+    user = await findManageable(req);
+    const body = req.body;
+    const isSelf = user._id.equals(req.user._id);
+    let newRole = user.role;
+    if (!blank(body.role) && body.role !== user.role) {
+      if (req.user.role !== ROLES.ADMIN) throw new ApiError(403, 'Only an administrator can change roles', 'FORBIDDEN');
+      if (isSelf) throw new ApiError(400, 'You cannot change your own role');
+      newRole = body.role;
+    }
+    if (user.role === ROLES.DRIVER && newRole !== ROLES.DRIVER) {
+      await assertNoUpcomingDriverAssignments(user._id);
+    }
+    if (req.file && newRole !== ROLES.DRIVER) throw new ApiError(400, 'Licence images can only be uploaded for drivers');
+    if (body.removeLicenseImage !== undefined && typeof body.removeLicenseImage !== 'boolean') {
+      throw new ApiError(400, 'removeLicenseImage must be true or false');
+    }
+    if (req.file && body.removeLicenseImage === true) {
+      throw new ApiError(400, 'Upload a replacement or remove the current licence image, not both');
+    }
+
+    for (const key of ['name', 'email', 'phone', 'idNumber']) {
+      if (key in body) user.set(key, clean(body[key]));
+    }
+    user.role = newRole;
+
+    // Set each profile field explicitly so cleared fields are really removed
+    const profile = extractProfile(body);
+    if (newRole === ROLES.DRIVER) {
+      await assertDriverLicenceCoversUpcomingAssignments(user._id, profile.licenseExpiry);
+    }
+    for (const key of PROFILE_FIELDS) {
+      user.set(`driverProfile.${key}`, newRole === ROLES.DRIVER ? profile[key] : undefined);
+    }
+
+    previousImage = user.driverProfile?.licenseImage?.toObject?.() || user.driverProfile?.licenseImage;
+    if (newRole !== ROLES.DRIVER || body.removeLicenseImage === true) {
+      user.set('driverProfile.licenseImage', undefined);
+    } else if (req.file) {
+      user.set('driverProfile.licenseImage', licenseImage(req.file));
+    }
+
+    await user.save(); // runs schema validators (licence fields required for drivers)
+  } catch (error) {
+    try {
+      await removeDriverLicenseFiles(req.file ? [req.file] : []);
+    } catch (cleanupError) {
+      console.error('Unable to remove unclaimed driver licence image:', cleanupError);
+    }
+    throw error;
   }
 
-  for (const key of ['name', 'email', 'phone', 'idNumber']) {
-    if (key in body) user.set(key, clean(body[key]));
+  const replacingImage = Boolean(req.file) || req.body.removeLicenseImage === true || user.role !== ROLES.DRIVER;
+  if (replacingImage && previousImage?.filename) {
+    await removeDriverLicenseFiles([previousImage]);
   }
-  user.role = newRole;
-
-  // Set each profile field explicitly so cleared fields are really removed
-  const profile = extractProfile(body);
-  if (newRole === ROLES.DRIVER) {
-    await assertDriverLicenceCoversUpcomingAssignments(user._id, profile.licenseExpiry);
-  }
-  for (const key of PROFILE_FIELDS) {
-    user.set(`driverProfile.${key}`, newRole === ROLES.DRIVER ? profile[key] : undefined);
-  }
-
-  await user.save(); // runs schema validators (licence fields required for drivers)
 
   res.json({
     data: serializeUsers([user])[0],
@@ -215,5 +282,8 @@ export const deleteUser = asyncHandler(async (req, res) => {
 
   if (user.role === ROLES.DRIVER) await assertNoUpcomingDriverAssignments(user._id);
   await user.deleteOne();
+  if (user.driverProfile?.licenseImage?.filename) {
+    await removeDriverLicenseFiles([user.driverProfile.licenseImage]);
+  }
   res.json({ message: 'User deleted' });
 });

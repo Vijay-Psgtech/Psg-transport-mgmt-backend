@@ -54,6 +54,9 @@ All authenticated routes use the HTTP-only `psg_transport_session` cookie (confi
 | `GET` | `/api/auth/me` | Authenticated | Return the current user |
 | `POST` | `/api/auth/logout` | Public | Clear the session cookie |
 | `POST` | `/api/auth/users` | Admin | Create an account |
+| `POST` | `/api/users` | Admin, transport officer | Create an account; driver licence images are optional multipart uploads |
+| `PUT` | `/api/users/:id` | Admin, transport officer | Update an account; optionally replace or remove a driver's licence image |
+| `GET` | `/api/users/:id/license-image/:filename` | Admin, transport officer | Retrieve a stored driver licence image |
 | `GET` | `/api/vehicles` | Authenticated | List vehicles; optional `type` and `status` filters |
 | `POST` | `/api/vehicles` | Admin, manager | Add a vehicle |
 | `PATCH` | `/api/vehicles/:id` | Admin, manager | Update provided vehicle fields |

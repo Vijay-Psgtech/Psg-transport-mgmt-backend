@@ -1,10 +1,11 @@
 import { Router } from 'express';
 import {
-  lookupUsers, listUsers, getUserStats, getUser, createUser, updateUser,
+  lookupUsers, listUsers, getUserStats, getUser, getDriverLicenseImage, createUser, updateUser,
   setUserStatus, resetUserPassword, deleteUser,
 } from '../controllers/userController.js';
 import { protect, authorize } from '../middleware/auth.js';
 import { ROLES, FLEET_MANAGERS } from '../constants/roles.js';
+import uploadDriverLicense from '../middleware/driverLicenseUpload.js';
 
 const router = Router();
 router.use(protect);
@@ -14,8 +15,14 @@ const staff = authorize(...FLEET_MANAGERS);
 
 router.get('/lookup', staff, lookupUsers); // keep static routes above '/:id'
 router.get('/stats', staff, getUserStats);
-router.route('/').get(staff, listUsers).post(staff, createUser);
-router.route('/:id').get(staff, getUser).put(staff, updateUser).delete(authorize(ROLES.ADMIN), deleteUser);
+router.get('/:id/license-image/:filename', staff, getDriverLicenseImage);
+router.route('/')
+  .get(staff, listUsers)
+  .post(staff, uploadDriverLicense, createUser);
+router.route('/:id')
+  .get(staff, getUser)
+  .put(staff, uploadDriverLicense, updateUser)
+  .delete(authorize(ROLES.ADMIN), deleteUser);
 router.patch('/:id/status', staff, setUserStatus);
 router.post('/:id/reset-password', staff, resetUserPassword);
 

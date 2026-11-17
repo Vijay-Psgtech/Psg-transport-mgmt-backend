@@ -54,6 +54,10 @@ const userSchema = new mongoose.Schema(
       licenseNumber: { type: String, set: strip, required: forDrivers('Licence number') },
       licenseClass: { type: String, enum: { values: LICENSE_CLASSES, message: 'Invalid licence class' }, required: forDrivers('Licence class') },
       licenseExpiry: { type: Date, required: forDrivers('Licence expiry date') },
+      licenseImage: {
+        filename: { type: String, match: /^[\da-f-]{36}$/i },
+        mimeType: { type: String, enum: ['image/jpeg', 'image/png', 'image/webp'] },
+      },
       badgeNumber: { type: String, trim: true },
       bloodGroup: { type: String, enum: { values: BLOOD_GROUPS, message: 'Invalid blood group' } },
       dateOfBirth: Date,
